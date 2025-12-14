@@ -208,7 +208,7 @@ class RobotController:
             self.pitch_offset = -1 * aruco_yaw
             print("设置为ArUco对齐模式")
         elif preset_type == 'extended':  # v键
-            self.offset = np.array([0.15, 0.12, -0.35])
+            self.offset = np.array([0.20, 0.12, -0.35])
             print("设置为扩展模式")
     
     def update_robot_pose(self):

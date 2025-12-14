@@ -8,150 +8,209 @@ import time
 from api import robot_control_api
 from api import camera_api
 from utils import ArucoProcessor, RobotController
+from modules import ArucoFollowModule
+
+
+class RobotSystem:
+    """机器人系统主类"""
+    
+    def __init__(self):
+        """初始化系统"""
+        self.camera_receiver = None
+        self.robot_api = None
+        self.aruco_processor = None
+        self.robot_controller = None
+        self.running = False
+        
+        # 功能模块
+        self.modules = {}
+        self.current_module = None
+        
+        # 相机内参 (RealSense标定)
+        self.camera_matrix = np.array([
+            [907.719360351562, 0.0, 651.812194824219],
+            [0.0, 908.330444335938, 387.889526367188],
+            [0.0, 0.0, 1.0]
+        ], dtype=np.float32)
+        self.dist_coeffs = np.zeros((5, 1), dtype=np.float32)
+        
+        # 系统级键盘映射
+        self.system_key_handlers = self._setup_system_key_handlers()
+    
+    def _setup_system_key_handlers(self):
+        """设置系统级键盘处理映射"""
+        return {
+            # 系统控制
+            ord('q'): self._quit_system,
+            
+            # 相机控制 (所有模块通用)
+            ord('w'): lambda: self.robot_controller.update_camera_angle('up'),
+            ord('s'): lambda: self.robot_controller.update_camera_angle('down'),
+            ord('a'): lambda: self.robot_controller.update_camera_angle('left'),
+            ord('d'): lambda: self.robot_controller.update_camera_angle('right'),
+            ord('x'): lambda: self.robot_controller.update_camera_angle('reset'),
+        }
+    
+    def initialize(self):
+        """初始化系统组件"""
+        print("ArUco机器人视觉伺服控制系统")
+        print("="*60)
+        print("相机控制: WASD-移动 X-复位")
+        print("="*60)
+        
+        # 初始化API
+        self.camera_receiver = camera_api.RobotImageReceiver()
+        self.robot_api = robot_control_api.RobotClient()
+        
+        # 初始化处理器
+        self.aruco_processor = ArucoProcessor(self.camera_matrix, self.dist_coeffs)
+        self.robot_controller = RobotController(self.robot_api, self.camera_receiver)
+        
+        # 启动相机
+        if not self._initialize_camera():
+            return False
+        
+        # 初始化机器人
+        if not self.robot_controller.initialize_robot():
+            return False
+        
+        # 初始化功能模块
+        self._initialize_modules()
+        
+        # 默认激活ArUco跟随模块
+        self._switch_module("aruco_follow")
+        
+        return True
+    
+    def _initialize_modules(self):
+        """初始化功能模块"""
+        self.modules = {
+            "aruco_follow": ArucoFollowModule(self.robot_controller, self.aruco_processor),
+            # 可以在这里添加更多模块
+        }
+    
+    def _initialize_camera(self):
+        """初始化相机"""
+        self.camera_receiver.start()
+        print("等待图像...")
+        for i in range(50):
+            if self.camera_receiver.get_frame() is not None:
+                print(f"✅ 图像接收成功!")
+                return True
+            time.sleep(0.1)
+        
+        print("❌ 未接收到图像")
+        return False
+    
+    def run(self):
+        """运行主循环"""
+        self.running = True
+        
+        try:
+            while self.running:
+                # 获取图像帧
+                frame = self.camera_receiver.get_frame()
+                if frame is None:
+                    time.sleep(0.01)
+                    continue
+                
+                # 使用当前模块处理
+                frame = self._process_current_module(frame)
+                
+                # 显示图像
+                self._display_frame(frame)
+                
+                # 处理键盘输入
+                self._handle_keyboard_input()
+        
+        except KeyboardInterrupt:
+            print("\n程序被用户中断")
+        
+        finally:
+            self._cleanup()
+    
+    def _process_current_module(self, frame):
+        """使用当前模块处理帧"""
+        if self.current_module and self.current_module.active:
+            return self.current_module.process_frame(frame)
+        else:
+            # 默认处理：显示无活动模块
+            cv2.putText(frame, "No Active Module", (10, 30), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            return frame
+    
+    def _display_frame(self, frame):
+        """显示帧并添加状态信息"""
+        # 添加当前模块信息
+        module_name = self.current_module.name if self.current_module else "None"
+        cv2.putText(frame, f"Module: {module_name}", (10, frame.shape[0] - 30), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        
+        # 添加系统控制提示
+        cv2.putText(frame, "Q-Quit WASD-Camera X-Reset", (10, frame.shape[0] - 10), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        
+        cv2.imshow("Robot Control System", frame)
+    
+    def _handle_keyboard_input(self):
+        """处理键盘输入"""
+        key = cv2.waitKey(1) & 0xFF
+        
+        # 优先处理系统级按键
+        if key in self.system_key_handlers:
+            self.system_key_handlers[key]()
+        # 然后处理当前模块的按键
+        elif self.current_module and self.current_module.active:
+            self.current_module.handle_key(key)
+    
+    def _switch_module(self, module_name):
+        """切换功能模块"""
+        if module_name in self.modules:
+            # 停用当前模块
+            if self.current_module:
+                self.current_module.deactivate()
+            
+            # 激活新模块
+            self.current_module = self.modules[module_name]
+            self.current_module.activate()
+            
+            print(f"切换到模块: {module_name}")
+        else:
+            print(f"未找到模块: {module_name}")
+    
+
+    
+    def _quit_system(self):
+        """退出系统"""
+        self.running = False
+    
+    def _cleanup(self):
+        """清理资源"""
+        # 停用当前模块
+        if self.current_module:
+            self.current_module.deactivate()
+        
+        # 清理所有模块
+        for module in self.modules.values():
+            module.cleanup()
+        
+        # 清理系统资源
+        if self.robot_controller:
+            self.robot_controller.shutdown()
+        if self.camera_receiver:
+            self.camera_receiver.stop()
+        cv2.destroyAllWindows()
+        print("程序结束")
 
 
 def main():
     """主函数"""
-    print("识别aruco 6*6 and 4*4")
-    print("="*60)
+    system = RobotSystem()
     
-    # 初始化相机和机器人API
-    camera_receiver = camera_api.RobotImageReceiver()
-    robot_api = robot_control_api.RobotClient()
-    
-    # 相机内参 (RealSense标定)
-    camera_matrix = np.array([
-        [907.719360351562, 0.0, 651.812194824219],
-        [0.0, 908.330444335938, 387.889526367188],
-        [0.0, 0.0, 1.0]
-    ], dtype=np.float32)
-    dist_coeffs = np.zeros((5, 1), dtype=np.float32)
-    
-    # 初始化处理器
-    aruco_processor = ArucoProcessor(camera_matrix, dist_coeffs)
-    robot_controller = RobotController(robot_api, camera_receiver)
-    
-    # 启动相机
-    camera_receiver.start()
-    print("等待图像...")
-    for i in range(50):
-        if camera_receiver.get_frame() is not None:
-            print(f"✅ 图像接收成功!")
-            break
-        time.sleep(0.1)
+    if system.initialize():
+        system.run()
     else:
-        print("❌ 未接收到图像")
-        return
-    
-    # 初始化机器人
-    if not robot_controller.initialize_robot():
-        return
-    
-    # 主循环
-    target_marker_id = 0  # 目标标记ID
-    
-    try:
-        while True:
-            # 获取图像帧
-            frame = camera_receiver.get_frame()
-            if frame is None:
-                time.sleep(0.01)
-                continue
-            
-            # 检测ArUco标记
-            detection_results = aruco_processor.detect_markers(frame)
-            
-            # 绘制检测到的标记
-            frame = aruco_processor.draw_markers(frame, detection_results)
-            
-            # 处理6x6标记
-            success, rvec, tvec = aruco_processor.process_marker(frame, target_marker_id, '6x6')
-            
-            if success:
-                # 更新机器人姿态信息
-                if robot_controller.update_robot_pose():
-                    pass  # 每15帧更新一次
-                
-                # 计算ArUco变换
-                marker_pos_base, marker_quat_base, target_left_hand_pos, target_left_hand_quat = \
-                    aruco_processor.calculate_aruco_transforms(
-                        rvec, tvec, robot_controller.latest_head_quat, 
-                        robot_controller.roll_offset, robot_controller.offset
-                    )
-                
-                if marker_pos_base is not None:
-                    # 更新标记信息
-                    robot_controller.update_marker_info(
-                        marker_pos_base, marker_quat_base, 
-                        target_left_hand_pos, target_left_hand_quat
-                    )
-            
-            # 执行跟随模式
-            if robot_controller.execute_follow_mode():
-                robot_controller.print_status_info()
-            
-            # 显示图像
-            cv2.imshow("ArUco Detection", frame)
-            
-            # 处理键盘输入
-            key = cv2.waitKey(1) & 0xFF
-            
-            if key == ord('q'):  # 退出程序
-                break
-            elif key == ord('w'):  # 摄像头控制
-                robot_controller.update_camera_angle('up')
-            elif key == ord('s'):
-                robot_controller.update_camera_angle('down')
-            elif key == ord('a'):
-                robot_controller.update_camera_angle('left')
-            elif key == ord('d'):
-                robot_controller.update_camera_angle('right')
-            elif key == ord('x'):
-                robot_controller.update_camera_angle('reset')
-            elif key == ord('n'):  # 跟随模式控制
-                robot_controller.set_follow_mode(False)
-            elif key == ord('m'):
-                robot_controller.set_follow_mode(True)
-            elif key == ord('i'):  # 位置调整
-                robot_controller.adjust_offset('position', 'up')
-            elif key == ord('k'):
-                robot_controller.adjust_offset('position', 'down')
-            elif key == ord('j'):
-                robot_controller.adjust_offset('position', 'left')
-            elif key == ord('l'):
-                robot_controller.adjust_offset('position', 'right')
-            elif key == ord('r'):
-                robot_controller.adjust_offset('position', 'forward')
-            elif key == ord('t'):
-                robot_controller.adjust_offset('position', 'backward')
-            elif key == ord('u'):  # 角度调整
-                robot_controller.adjust_offset('roll', 'positive')
-            elif key == ord('o'):
-                robot_controller.adjust_offset('roll', 'negative')
-            elif key == ord('y'):
-                robot_controller.adjust_offset('pitch', 'positive')
-            elif key == ord('p'):
-                robot_controller.adjust_offset('pitch', 'negative')
-            elif key == ord('g'):
-                robot_controller.adjust_offset('yaw', 'positive')
-            elif key == ord('h'):
-                robot_controller.adjust_offset('yaw', 'negative')
-            elif key == ord('z'):  # 重置偏移
-                robot_controller.reset_offsets('default')
-            elif key == ord('c'):
-                robot_controller.reset_offsets('aruco_aligned')
-            elif key == ord('v'):
-                robot_controller.reset_offsets('extended')
-    
-    except KeyboardInterrupt:
-        print("\n程序被用户中断")
-    
-    finally:
-        # 清理资源
-        robot_controller.shutdown()
-        camera_receiver.stop()
-        cv2.destroyAllWindows()
-        print("程序结束")
+        print("系统初始化失败")
 
 
 if __name__ == "__main__":

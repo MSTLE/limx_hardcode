@@ -4,6 +4,7 @@
 from .coordinate_transforms import *
 from .aruco_processor import ArucoProcessor
 from .robot_controller import RobotController
+from .base_module import BaseModule
 
 __all__ = [
     'quaternion_to_rotation_matrix',
@@ -14,5 +15,6 @@ __all__ = [
     'convert_to_float_list',
     'transform_aruco_to_reference',
     'ArucoProcessor',
-    'RobotController'
+    'RobotController',
+    'BaseModule'
 ]
