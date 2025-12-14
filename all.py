@@ -2,9 +2,8 @@ import cv2
 import cv2.aruco as aruco
 import numpy as np
 import time
-import robot_control_api
-
-import camera_api
+from api import robot_control_api
+from api import camera_api
 
 camera_reveiver = camera_api.RobotImageReceiver()
 
