@@ -8,7 +8,7 @@ import time
 from api import robot_control_api
 from api import camera_api
 from utils import ArucoProcessor, RobotController
-from modules import ArucoFollowModule
+from modules import ArucoFollowModule, ArucoWalkModule
 
 
 class RobotSystem:
@@ -42,6 +42,8 @@ class RobotSystem:
         return {
             # 系统控制
             ord('q'): self._quit_system,
+            ord('1'): lambda: self._switch_module("aruco_follow"),
+            ord('2'): lambda: self._switch_module("aruco_walk"),
             
             # 相机控制 (所有模块通用)
             ord('w'): lambda: self.robot_controller.update_camera_angle('up'),
@@ -55,6 +57,7 @@ class RobotSystem:
         """初始化系统组件"""
         print("ArUco机器人视觉伺服控制系统")
         print("="*60)
+        print("模块切换: 1-ArUco跟随 2-ArUco行走")
         print("相机控制: WASD-移动 X-复位")
         print("="*60)
         
@@ -86,6 +89,7 @@ class RobotSystem:
         """初始化功能模块"""
         self.modules = {
             "aruco_follow": ArucoFollowModule(self.robot_controller, self.aruco_processor),
+            "aruco_walk": ArucoWalkModule(self.robot_controller, self.aruco_processor),
             # 可以在这里添加更多模块
         }
     
@@ -147,7 +151,7 @@ class RobotSystem:
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         
         # 添加系统控制提示
-        cv2.putText(frame, "Q-Quit WASD-Camera X-Reset", (10, frame.shape[0] - 10), 
+        cv2.putText(frame, "1-Follow 2-Walk Q-Quit WASD-Camera X-Reset", (10, frame.shape[0] - 10), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         
         cv2.imshow("Robot Control System", frame)

@@ -61,3 +61,10 @@ class RobotImageReceiver:
     def stop(self):
         """停止接收"""
         self.running = False
+
+
+class WalkCameraReceiver(RobotImageReceiver):
+    """行走控制专用相机接收器（5555端口）"""
+    
+    def __init__(self, server_ip="10.192.1.3", port=5555):
+        super().__init__(server_ip, port)
