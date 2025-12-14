@@ -54,6 +54,11 @@ class RobotController:
         self.latest_target_left_hand_pos = None
         self.latest_target_left_hand_quat = None
         
+        # 初始位置保存
+        self.initial_left_hand_pos = None
+        self.initial_left_hand_quat = None
+        self.initial_head_quat = None
+        
         # 帧计数器
         self.send_frame_init = 0
         self.get_frame_init = 0
@@ -75,17 +80,27 @@ class RobotController:
         self.robot_api.set_manip_mode(1)
         time.sleep(3)
         
-        # 获取初始头部姿态
-        head_pose = self.robot_api.get_manip_ee_pose()
-        if head_pose is None:
-            print("❌ 无法获取头部姿态")
+        # 获取初始姿态（头部和左臂）
+        initial_pose = self.robot_api.get_manip_ee_pose()
+        if initial_pose is None:
+            print("❌ 无法获取初始姿态")
             return False
-            
-        self.latest_head_quat = head_pose.get('head_quat', [0.0, 0.0, 0.0, 1.0])
-        print(f"初始head_quat: {self.latest_head_quat}")
+        
+        # 保存初始位置和姿态
+        self.initial_head_quat = initial_pose.get('head_quat', [0.0, 0.0, 0.0, 1.0])
+        self.initial_left_hand_pos = initial_pose.get('left_hand_pos', [0.0, 0.0, 0.0])
+        self.initial_left_hand_quat = initial_pose.get('left_hand_quat', [0.0, 0.0, 0.0, 1.0])
+        
+        # 设置当前状态
+        self.latest_head_quat = self.initial_head_quat.copy()
+        
+        print(f"✅ 保存初始姿态:")
+        print(f"  头部四元数: {self.initial_head_quat}")
+        print(f"  左臂位置: {self.initial_left_hand_pos}")
+        print(f"  左臂四元数: {self.initial_left_hand_quat}")
         
         # 将初始头部四元数转换为欧拉角
-        head_roll, head_pitch, head_yaw = quaternion_to_euler(self.latest_head_quat)
+        head_roll, head_pitch, head_yaw = quaternion_to_euler(self.initial_head_quat)
         print(f"初始头部角度 (单位: 度):")
         print(f"  roll: {np.degrees(head_roll):.2f}°")
         print(f"  pitch: {np.degrees(head_pitch):.2f}°")
@@ -351,6 +366,46 @@ class RobotController:
             print(f"yaw: {np.degrees(aruco_yaw):.1f}°")
         
         print("========================")
+    
+    def return_to_initial_position(self):
+        """恢复到初始位置"""
+        if self.initial_left_hand_pos is None or self.initial_left_hand_quat is None:
+            print("❌ 未保存初始位置，无法恢复")
+            return False
+        
+        print("🔄 恢复到初始位置...")
+        
+        try:
+            # 先禁用跟随模式
+            was_following = self.left_arm_follow_mode
+            if was_following:
+                self.set_follow_mode(False)
+                print("  暂时禁用跟随模式")
+            
+            # 恢复到初始位置和姿态
+            response = self.robot_api.set_manip_ee_pose(
+                head_quat=convert_to_float_list(self.initial_head_quat),
+                left_pos=convert_to_float_list(self.initial_left_hand_pos),
+                left_quat=convert_to_float_list(self.initial_left_hand_quat)
+            )
+            
+            if response and response.get('result') == 'success':
+                print("✅ 成功恢复到初始位置")
+                print(f"  位置: {self.initial_left_hand_pos}")
+                print(f"  姿态: {self.initial_left_hand_quat}")
+                
+                # 如果之前是跟随模式，询问是否重新启用
+                if was_following:
+                    print("  跟随模式已暂停，按M键重新启用")
+                
+                return True
+            else:
+                print(f"❌ 恢复初始位置失败: {response}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ 恢复初始位置时发生错误: {e}")
+            return False
     
     def shutdown(self):
         """关闭机器人"""

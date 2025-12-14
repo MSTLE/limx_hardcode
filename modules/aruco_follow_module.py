@@ -61,6 +61,7 @@ class ArucoFollowModule(BaseModule):
         return {
             ord('n'): lambda: self.robot_controller.set_follow_mode(False),
             ord('m'): lambda: self.robot_controller.set_follow_mode(True),
+            ord('b'): lambda: self.robot_controller.return_to_initial_position(),
             ord('i'): lambda: self.robot_controller.adjust_offset('position', 'up'),
             ord('k'): lambda: self.robot_controller.adjust_offset('position', 'down'),
             ord('j'): lambda: self.robot_controller.adjust_offset('position', 'left'),
@@ -88,9 +89,9 @@ class ArucoFollowModule(BaseModule):
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         
         # 显示控制提示
-        cv2.putText(frame, "M-Enable N-Disable IJKLRT-Position UOYPGH-Rotation", (10, frame.shape[0] - 60), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        cv2.putText(frame, "Z-Default C-Aligned V-Extended", (10, frame.shape[0] - 40), 
+        cv2.putText(frame, "M-Enable N-Disable B-InitPos IJKLRT-Position UOYPGH-Rotation", (10, frame.shape[0] - 80), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+        cv2.putText(frame, "Z-Default C-Aligned V-Extended", (10, frame.shape[0] - 60), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
     
     def deactivate(self):
