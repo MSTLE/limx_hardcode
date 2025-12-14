@@ -57,6 +57,8 @@ class RobotController:
         # 初始位置保存
         self.initial_left_hand_pos = None
         self.initial_left_hand_quat = None
+        self.initial_right_hand_pos = None
+        self.initial_right_hand_quat = None
         self.initial_head_quat = None
         
         # 帧计数器
@@ -90,6 +92,8 @@ class RobotController:
         self.initial_head_quat = initial_pose.get('head_quat', [0.0, 0.0, 0.0, 1.0])
         self.initial_left_hand_pos = initial_pose.get('left_hand_pos', [0.0, 0.0, 0.0])
         self.initial_left_hand_quat = initial_pose.get('left_hand_quat', [0.0, 0.0, 0.0, 1.0])
+        self.initial_right_hand_pos = initial_pose.get('right_hand_pos', [0.0, 0.0, 0.0])
+        self.initial_right_hand_quat = initial_pose.get('right_hand_quat', [0.0, 0.0, 0.0, 1.0])
         
         # 设置当前状态
         self.latest_head_quat = self.initial_head_quat.copy()
@@ -98,6 +102,8 @@ class RobotController:
         print(f"  头部四元数: {self.initial_head_quat}")
         print(f"  左臂位置: {self.initial_left_hand_pos}")
         print(f"  左臂四元数: {self.initial_left_hand_quat}")
+        print(f"  右臂位置: {self.initial_right_hand_pos}")
+        print(f"  右臂四元数: {self.initial_right_hand_quat}")
         
         # 将初始头部四元数转换为欧拉角
         head_roll, head_pitch, head_yaw = quaternion_to_euler(self.initial_head_quat)
@@ -140,11 +146,20 @@ class RobotController:
             self.camera_pitch = np.radians(-180)
             print("云台复位")
         
-        # 发送相机角度给机器人
+        # 发送相机角度给机器人，确保右臂保持初始位置
         rpy = np.array([0.0, self.camera_pitch, self.camera_yaw])
         R_head = rotation_matrix(rpy)
         head_quat = rotation_matrix_to_quaternion(R_head)
-        response = self.robot_api.set_manip_ee_pose(head_quat=convert_to_float_list(head_quat))
+        
+        # 构建完整的姿态控制命令，保持右臂初始位置
+        pose_params = {"head_quat": convert_to_float_list(head_quat)}
+        
+        # 如果有右臂初始位置，则保持它
+        if self.initial_right_hand_pos is not None and self.initial_right_hand_quat is not None:
+            pose_params["right_pos"] = convert_to_float_list(self.initial_right_hand_pos)
+            pose_params["right_quat"] = convert_to_float_list(self.initial_right_hand_quat)
+        
+        response = self.robot_api.set_manip_ee_pose(**pose_params)
         print(f"相机角度控制响应: {response}")
     
     def set_follow_mode(self, enabled):
@@ -324,11 +339,13 @@ class RobotController:
         if self.send_frame_init >= 15:
             self.send_frame_init = 0
             
-            # 发送控制命令
+            # 发送控制命令，确保右臂保持初始位置
             response = self.robot_api.set_manip_ee_pose(
                 head_quat=convert_to_float_list(self.latest_head_quat),
                 left_pos=convert_to_float_list(target_pos),
-                left_quat=convert_to_float_list(target_quat)
+                left_quat=convert_to_float_list(target_quat),
+                right_pos=convert_to_float_list(self.initial_right_hand_pos) if self.initial_right_hand_pos is not None else None,
+                right_quat=convert_to_float_list(self.initial_right_hand_quat) if self.initial_right_hand_quat is not None else None
             )
             
             return True
@@ -369,8 +386,9 @@ class RobotController:
     
     def return_to_initial_position(self):
         """恢复到初始位置"""
-        if self.initial_left_hand_pos is None or self.initial_left_hand_quat is None:
-            print("❌ 未保存初始位置，无法恢复")
+        if (self.initial_left_hand_pos is None or self.initial_left_hand_quat is None or 
+            self.initial_right_hand_pos is None or self.initial_right_hand_quat is None):
+            print("❌ 未保存完整的初始位置，无法恢复")
             return False
         
         print("🔄 恢复到初始位置...")
@@ -382,17 +400,21 @@ class RobotController:
                 self.set_follow_mode(False)
                 print("  暂时禁用跟随模式")
             
-            # 恢复到初始位置和姿态
+            # 恢复到初始位置和姿态（包括左臂和右臂）
             response = self.robot_api.set_manip_ee_pose(
                 head_quat=convert_to_float_list(self.initial_head_quat),
                 left_pos=convert_to_float_list(self.initial_left_hand_pos),
-                left_quat=convert_to_float_list(self.initial_left_hand_quat)
+                left_quat=convert_to_float_list(self.initial_left_hand_quat),
+                right_pos=convert_to_float_list(self.initial_right_hand_pos),
+                right_quat=convert_to_float_list(self.initial_right_hand_quat)
             )
             
             if response and response.get('result') == 'success':
                 print("✅ 成功恢复到初始位置")
-                print(f"  位置: {self.initial_left_hand_pos}")
-                print(f"  姿态: {self.initial_left_hand_quat}")
+                print(f"  左臂位置: {self.initial_left_hand_pos}")
+                print(f"  左臂姿态: {self.initial_left_hand_quat}")
+                print(f"  右臂位置: {self.initial_right_hand_pos}")
+                print(f"  右臂姿态: {self.initial_right_hand_quat}")
                 
                 # 如果之前是跟随模式，询问是否重新启用
                 if was_following:
