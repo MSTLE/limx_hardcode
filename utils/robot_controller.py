@@ -11,6 +11,7 @@ from .coordinate_transforms import (
     quaternion_to_rotation_matrix,
     convert_to_float_list
 )
+from .trajectory_interpolator import AdaptiveTrajectoryInterpolator
 
 
 class RobotController:
@@ -64,6 +65,18 @@ class RobotController:
         # 帧计数器
         self.send_frame_init = 0
         self.get_frame_init = 0
+        
+        # 轨迹插值器
+        self.trajectory_interpolator = AdaptiveTrajectoryInterpolator(
+            interpolation_steps=15,
+            max_velocity=0.08,  # 8cm/s
+            max_angular_velocity=0.3  # 约17度/s
+        )
+        
+        # 平滑控制参数
+        self.smooth_control_enabled = True
+        self.last_command_time = 0
+        self.min_command_interval = 1.0 / 30.0  # 30Hz最大发送频率
         
     def initialize_robot(self):
         """初始化机器人状态"""
@@ -241,6 +254,70 @@ class RobotController:
             self.offset = np.array([0.20, 0.12, -0.35])
             print("设置为扩展模式")
     
+    def toggle_smooth_control(self):
+        """切换平滑控制模式"""
+        self.smooth_control_enabled = not self.smooth_control_enabled
+        if self.smooth_control_enabled:
+            print("✅ 启用平滑插帧控制")
+        else:
+            print("❌ 禁用平滑插帧控制")
+            # 停止当前插值运动
+            self.trajectory_interpolator.stop_motion()
+    
+    def adjust_smooth_parameters(self, param_type, direction):
+        """
+        调整平滑控制参数
+        
+        参数:
+            param_type: 参数类型 ('speed', 'steps', 'angular_speed')
+            direction: 方向 ('increase', 'decrease')
+        """
+        if param_type == 'speed':
+            current_speed = self.trajectory_interpolator.max_velocity
+            if direction == 'increase':
+                new_speed = min(0.15, current_speed + 0.01)  # 最大15cm/s
+            else:
+                new_speed = max(0.02, current_speed - 0.01)  # 最小2cm/s
+            
+            self.trajectory_interpolator.set_interpolation_parameters(max_vel=new_speed)
+            print(f"🎛️ 线性速度: {new_speed*100:.1f} cm/s")
+            
+        elif param_type == 'angular_speed':
+            current_angular_speed = self.trajectory_interpolator.max_angular_velocity
+            if direction == 'increase':
+                new_angular_speed = min(1.0, current_angular_speed + 0.05)  # 最大约57度/s
+            else:
+                new_angular_speed = max(0.1, current_angular_speed - 0.05)  # 最小约6度/s
+            
+            self.trajectory_interpolator.set_interpolation_parameters(max_ang_vel=new_angular_speed)
+            print(f"🎛️ 角速度: {np.degrees(new_angular_speed):.1f} deg/s")
+            
+        elif param_type == 'steps':
+            current_steps = self.trajectory_interpolator.interpolation_steps
+            if direction == 'increase':
+                new_steps = min(30, current_steps + 2)
+            else:
+                new_steps = max(5, current_steps - 2)
+            
+            self.trajectory_interpolator.set_interpolation_parameters(steps=new_steps)
+            print(f"🎛️ 插值步数: {new_steps}")
+    
+    def get_smooth_control_status(self):
+        """获取平滑控制状态信息"""
+        if not self.smooth_control_enabled:
+            return "OFF"
+        
+        progress = self.trajectory_interpolator.get_motion_progress()
+        is_moving = not self.trajectory_interpolator.is_motion_complete()
+        
+        status = "ON"
+        if is_moving:
+            status += f" (运动中 {progress*100:.0f}%)"
+        else:
+            status += " (静止)"
+        
+        return status
+    
     def update_robot_pose(self):
         """更新机器人姿态信息"""
         self.get_frame_init += 1
@@ -273,13 +350,39 @@ class RobotController:
         self.latest_target_left_hand_quat = target_left_hand_quat.copy()
     
     def execute_follow_mode(self):
-        """执行跟随模式"""
+        """执行跟随模式（带平滑插帧）"""
         if not self.left_arm_follow_mode or self.latest_marker_pos is None:
             return
         
         # 使用最新检测到的ArUco码信息和当前offset计算目标位置
         target_pos = self.latest_marker_pos + self.offset
         
+        # 计算目标姿态
+        target_quat = self._calculate_target_orientation()
+        
+        # 更新轨迹插值器的目标
+        if self.smooth_control_enabled:
+            self.trajectory_interpolator.set_target(target_pos, target_quat)
+            
+            # 获取插值后的路径点
+            interpolated_pos, interpolated_quat, is_moving = self.trajectory_interpolator.get_next_waypoint()
+            
+            if interpolated_pos is not None and interpolated_quat is not None:
+                # 使用插值后的位置和姿态
+                return self._send_smooth_command(interpolated_pos, interpolated_quat)
+            else:
+                # 如果没有新的路径点，检查是否需要发送当前状态
+                current_pos, current_quat = self.trajectory_interpolator.get_current_state()
+                if current_pos is not None:
+                    return self._send_smooth_command(current_pos, current_quat)
+        else:
+            # 传统控制模式
+            return self._send_traditional_command(target_pos, target_quat)
+        
+        return False
+    
+    def _calculate_target_orientation(self):
+        """计算目标姿态"""
         # 将四元数转换为旋转矩阵
         R_aruco = quaternion_to_rotation_matrix(self.latest_marker_quat)
         
@@ -333,8 +436,41 @@ class RobotController:
             R_end_effector = R_end_effector @ R_yaw
         
         # 将旋转矩阵转换为四元数
-        target_quat = rotation_matrix_to_quaternion(R_end_effector)
+        return rotation_matrix_to_quaternion(R_end_effector)
+    
+    def _send_smooth_command(self, target_pos, target_quat):
+        """发送平滑控制命令"""
+        current_time = time.time()
         
+        # 频率控制
+        if current_time - self.last_command_time < self.min_command_interval:
+            return False
+        
+        self.last_command_time = current_time
+        
+        try:
+            # 发送控制命令，确保右臂保持初始位置
+            response = self.robot_api.set_manip_ee_pose(
+                head_quat=convert_to_float_list(self.latest_head_quat),
+                left_pos=convert_to_float_list(target_pos),
+                left_quat=convert_to_float_list(target_quat),
+                right_pos=convert_to_float_list(self.initial_right_hand_pos) if self.initial_right_hand_pos is not None else None,
+                right_quat=convert_to_float_list(self.initial_right_hand_quat) if self.initial_right_hand_quat is not None else None
+            )
+            
+            # 检查响应
+            if response and response.get('result') == 'success':
+                return True
+            else:
+                print(f"⚠️ 平滑控制命令响应异常: {response}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ 发送平滑控制命令失败: {e}")
+            return False
+    
+    def _send_traditional_command(self, target_pos, target_quat):
+        """发送传统控制命令"""
         self.send_frame_init += 1
         if self.send_frame_init >= 15:
             self.send_frame_init = 0
