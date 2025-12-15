@@ -18,12 +18,12 @@ class ArucoWalkModule(BaseModule):
         
         # 行走控制参数
         self.walk_enabled = False
-        self.walk_speed = 0.3  # 降低基础行走速度，便于精确控制
-        self.turn_speed = 0.3  # 降低基础转向速度，便于精确对正
+        self.walk_speed = 0.4  # 降低基础行走速度，便于精确控制
+        self.turn_speed = 0.4  # 降低基础转向速度，便于精确对正
         
         # 控制参数 - 三个独立的对正条件
-        self.target_distance = 0.7  # 目标距离（米）
-        self.distance_tolerance = 0.15  # 条件3：距离容差（米）
+        self.target_distance = 0.65  # 目标距离（米）
+        self.distance_tolerance = 0.6  # 条件3：距离容差（米）
         self.origin_tolerance = 50.0  # 条件1：原点与中线重合容差（像素）
         self.z_axis_angle_tolerance = 10.0  # 条件2：Z轴与水平方向角度容差（度）
         
@@ -32,8 +32,8 @@ class ArucoWalkModule(BaseModule):
         self.walk_camera_initialized = False
         
         # PID控制参数 - 进一步降低增益，让运动更平稳
-        self.distance_kp = 0.5  # 进一步降低距离控制增益，减少运动幅度
-        self.angle_kp = 0.4     # 进一步降低角度控制增益，让旋转更加平稳
+        self.distance_kp = 0.2  # 进一步降低距离控制增益，减少运动幅度
+        self.angle_kp = 0.3     # 进一步降低角度控制增益，让旋转更加平稳
         
         # 最小控制阈值（避免控制值太小机器人不响应）
         self.min_walk_vel = 0.15   # 降低最小行走速度，便于精细调整
