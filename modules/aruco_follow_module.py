@@ -15,6 +15,56 @@ class ArucoFollowModule(BaseModule):
         self.target_marker_id = 0
         self.key_bindings = self.get_key_bindings()
     
+    def activate(self):
+        """激活模块时进行状态检查和初始化"""
+        super().activate()
+        
+        # 确保跟随模式处于正确状态
+        if hasattr(self.robot_controller, 'left_arm_follow_mode'):
+            if self.robot_controller.left_arm_follow_mode:
+                print("⚠️ 检测到跟随模式已启用，将重新初始化")
+                self.robot_controller.set_follow_mode(False)
+        
+        # 确保平滑控制处于正确状态
+        if hasattr(self.robot_controller, 'trajectory_interpolator'):
+            self.robot_controller.trajectory_interpolator.stop_motion()
+            print("🔄 已重置轨迹插值器状态")
+        
+        # 确保机器人处于移动操作模式
+        if self.robot_controller.ensure_manipulation_mode():
+            # 重新获取初始姿态（因为可能已经改变）
+            self._refresh_initial_pose()
+        
+        print("✅ ArUco跟随模块激活完成，按M键启用跟随模式")
+    
+    def _refresh_initial_pose(self):
+        """刷新初始姿态"""
+        try:
+            print("🔄 刷新初始姿态...")
+            
+            # 获取当前姿态作为新的初始姿态
+            current_pose = self.robot_controller.robot_api.get_manip_ee_pose()
+            if current_pose and current_pose.get('result') == 'success':
+                # 更新初始位置和姿态
+                self.robot_controller.initial_head_quat = current_pose.get('head_quat', [0.0, 0.0, 0.0, 1.0])
+                self.robot_controller.initial_left_hand_pos = current_pose.get('left_hand_pos', [0.0, 0.0, 0.0])
+                self.robot_controller.initial_left_hand_quat = current_pose.get('left_hand_quat', [0.0, 0.0, 0.0, 1.0])
+                self.robot_controller.initial_right_hand_pos = current_pose.get('right_hand_pos', [0.0, 0.0, 0.0])
+                self.robot_controller.initial_right_hand_quat = current_pose.get('right_hand_quat', [0.0, 0.0, 0.0, 1.0])
+                
+                # 设置当前状态
+                self.robot_controller.latest_head_quat = self.robot_controller.initial_head_quat.copy()
+                
+                print("✅ 初始姿态已刷新")
+                print(f"  头部四元数: {self.robot_controller.initial_head_quat}")
+                print(f"  左臂位置: {self.robot_controller.initial_left_hand_pos}")
+                print(f"  右臂位置: {self.robot_controller.initial_right_hand_pos}")
+            else:
+                print(f"❌ 无法获取当前姿态: {current_pose}")
+                
+        except Exception as e:
+            print(f"❌ 刷新初始姿态时出错: {e}")
+    
     def process_frame(self, frame):
         """处理图像帧"""
         if not self.active:
@@ -129,4 +179,14 @@ class ArucoFollowModule(BaseModule):
         """停用模块时关闭跟随模式"""
         if hasattr(self.robot_controller, 'set_follow_mode'):
             self.robot_controller.set_follow_mode(False)
+            print("🔄 已禁用跟随模式")
+        
+        # 停止平滑控制运动
+        if hasattr(self.robot_controller, 'trajectory_interpolator'):
+            self.robot_controller.trajectory_interpolator.stop_motion()
+            print("🔄 已停止轨迹插值运动")
+        
+        # 退出移动操作模式
+        self.robot_controller.exit_manipulation_mode()
+        
         super().deactivate()

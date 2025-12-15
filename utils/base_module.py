@@ -50,12 +50,12 @@ class BaseModule(ABC):
     def activate(self):
         """激活模块"""
         self.active = True
-        print(f"模块 {self.name} 已激活")
+        print(f"✅ 模块 {self.name} 已激活")
     
     def deactivate(self):
         """停用模块"""
         self.active = False
-        print(f"模块 {self.name} 已停用")
+        print(f"❌ 模块 {self.name} 已停用")
     
     def handle_key(self, key):
         """

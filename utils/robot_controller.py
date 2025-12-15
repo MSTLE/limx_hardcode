@@ -78,6 +78,9 @@ class RobotController:
         self.last_command_time = 0
         self.min_command_interval = 1.0 / 30.0  # 30Hz最大发送频率
         
+        # 操作模式状态跟踪
+        self.manipulation_mode_active = False
+        
     def initialize_robot(self):
         """初始化机器人状态"""
         print("初始化机器人...")
@@ -94,6 +97,9 @@ class RobotController:
         time.sleep(3)
         self.robot_api.set_manip_mode(1)
         time.sleep(3)
+        
+        # 标记移动操作模式已激活
+        self.manipulation_mode_active = True
         
         # 获取初始姿态（头部和左臂）
         initial_pose = self.robot_api.get_manip_ee_pose()
@@ -180,8 +186,14 @@ class RobotController:
         self.left_arm_follow_mode = enabled
         if enabled:
             print("已进入左臂末端跟随模式")
+            # 重置帧计数器，确保状态同步
+            self.send_frame_init = 0
+            self.get_frame_init = 0
         else:
             print("已退出左臂末端跟随模式")
+            # 停止轨迹插值运动
+            if hasattr(self, 'trajectory_interpolator'):
+                self.trajectory_interpolator.stop_motion()
     
     def adjust_offset(self, adjustment_type, direction):
         """
@@ -565,8 +577,49 @@ class RobotController:
             print(f"❌ 恢复初始位置时发生错误: {e}")
             return False
     
+    def ensure_manipulation_mode(self):
+        """确保机器人处于移动操作模式"""
+        if not self.manipulation_mode_active:
+            print("🔧 重新进入移动操作模式...")
+            try:
+                # 进入准备模式
+                result0 = self.robot_api.set_manip_mode(0)
+                time.sleep(3)
+                
+                # 进入操作模式
+                result1 = self.robot_api.set_manip_mode(1)
+                time.sleep(3)
+                
+                if result1 and result1.get('result') == 'success':
+                    self.manipulation_mode_active = True
+                    print("✅ 成功重新进入移动操作模式")
+                    return True
+                else:
+                    print(f"❌ 重新进入移动操作模式失败: {result1}")
+                    return False
+                    
+            except Exception as e:
+                print(f"❌ 重新进入移动操作模式时出错: {e}")
+                return False
+        return True
+    
+    def exit_manipulation_mode(self):
+        """退出移动操作模式"""
+        if self.manipulation_mode_active:
+            try:
+                result = self.robot_api.set_manip_mode(2)
+                time.sleep(1)
+                
+                if result and result.get('result') == 'success':
+                    self.manipulation_mode_active = False
+                    print("✅ 成功退出移动操作模式")
+                else:
+                    print(f"⚠️ 退出移动操作模式响应: {result}")
+                    
+            except Exception as e:
+                print(f"❌ 退出移动操作模式时出错: {e}")
+    
     def shutdown(self):
         """关闭机器人"""
-        self.robot_api.set_manip_mode(2)
-        time.sleep(0.5)
+        self.exit_manipulation_mode()
         self.robot_api.set_damping()

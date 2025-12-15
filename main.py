@@ -170,17 +170,45 @@ class RobotSystem:
     def _switch_module(self, module_name):
         """切换功能模块"""
         if module_name in self.modules:
+            print(f"🔄 正在切换到模块: {module_name}")
+            
             # 停用当前模块
             if self.current_module:
+                print(f"🔄 停用当前模块: {self.current_module.name}")
                 self.current_module.deactivate()
+                
+                # 等待一小段时间确保资源完全释放
+                import time
+                time.sleep(0.1)
             
             # 激活新模块
             self.current_module = self.modules[module_name]
+            print(f"🔄 激活新模块: {self.current_module.name}")
             self.current_module.activate()
             
-            print(f"切换到模块: {module_name}")
+            # 重置机器人控制器的状态
+            self._reset_robot_controller_state()
+            
+            print(f"✅ 成功切换到模块: {module_name}")
         else:
-            print(f"未找到模块: {module_name}")
+            print(f"❌ 未找到模块: {module_name}")
+    
+    def _reset_robot_controller_state(self):
+        """重置机器人控制器状态，避免模块间冲突"""
+        if hasattr(self, 'robot_controller'):
+            # 重置帧计数器
+            self.robot_controller.send_frame_init = 0
+            self.robot_controller.get_frame_init = 0
+            
+            # 重置最后命令时间
+            if hasattr(self.robot_controller, 'last_command_time'):
+                self.robot_controller.last_command_time = 0
+            
+            # 停止轨迹插值运动
+            if hasattr(self.robot_controller, 'trajectory_interpolator'):
+                self.robot_controller.trajectory_interpolator.stop_motion()
+            
+            print("🔄 已重置机器人控制器状态")
     
 
     

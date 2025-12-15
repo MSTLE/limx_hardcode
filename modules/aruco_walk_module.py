@@ -53,22 +53,61 @@ class ArucoWalkModule(BaseModule):
     def activate(self):
         """激活模块时启动5555端口相机"""
         super().activate()
+        
+        # 重置模块状态
+        self.walk_enabled = False
+        self.last_marker_detected = False
+        self.robot_mode_checked = False
+        self.control_frame_count = 0
+        print("🔄 已重置行走模块状态")
+        
+        # 启动5555端口相机
         if not self.walk_camera_initialized:
             self.walk_camera.start()
             self.walk_camera_initialized = True
             print("✅ 5555端口相机已启动")
         
+        # 确保机器人退出移动操作模式并进入站立模式
+        self.robot_controller.exit_manipulation_mode()
+        
         # 确保机器人处于正确的行走模式
         self._ensure_walk_mode()
+        
+        print("✅ ArUco行走模块激活完成，按E键启用行走控制")
     
     def deactivate(self):
         """停用模块时停止相机和行走"""
         if self.walk_enabled:
             self.set_walk_mode(False)
+        
+        # 停止5555端口相机
         if self.walk_camera_initialized:
             self.walk_camera.stop()
             self.walk_camera_initialized = False
             print("✅ 5555端口相机已停止")
+        
+        # 确保机器人停止行走
+        try:
+            print("🛑 确保机器人完全停止...")
+            # 使用send_command方法，不等待响应，避免超时
+            self.robot_controller.robot_api.send_command(
+                "request_set_walk_vel", 
+                {"x": 0, "y": 0, "yaw": 0}, 
+                wait_for_response=False
+            )
+            
+            # 等待一小段时间确保停止
+            import time
+            time.sleep(0.3)
+            
+        except Exception as e:
+            print(f"⚠️ 停止行走时出现异常: {e}")
+        
+        # 重置模式检查标志，避免影响其他模块
+        self.robot_mode_checked = False
+        print("🔄 重置机器人模式检查标志")
+        
+        print("✅ ArUco行走模块已完全停用")
         super().deactivate()
     
     def process_frame(self, frame):
