@@ -69,8 +69,8 @@ class RobotController:
         # 轨迹插值器
         self.trajectory_interpolator = AdaptiveTrajectoryInterpolator(
             interpolation_steps=15,
-            max_velocity=0.08,  # 8cm/s
-            max_angular_velocity=0.3  # 约17度/s
+            max_velocity=0.35,  # 8cm/s
+            max_angular_velocity=0.6  # 约17度/s
         )
         
         # 平滑控制参数
@@ -250,20 +250,26 @@ class RobotController:
     def reset_offsets(self, preset_type='default'):
         """重置偏移量"""
         if preset_type == 'default':  # z键
-            self.offset = np.array([0.10, 0.08, -0.10]) 
+            self.offset = np.array([0.00, 0.02, -0.10]) 
             self.roll_offset = np.radians(6.0)
             self.pitch_offset = np.radians(-111)
             self.yaw_offset = 0.0
             print("重置offset为默认值")
         elif preset_type == 'aruco_aligned' and self.latest_marker_quat is not None:  # c键
             aruco_roll, aruco_pitch, aruco_yaw = quaternion_to_euler(self.latest_marker_quat)
-            self.offset = np.array([0.08, 0.10, -0.15]) 
+            self.offset = np.array([0.02, 0.08, -0.15]) 
             self.roll_offset = np.radians(6.0) 
             self.yaw_offset = aruco_pitch - np.radians(90) 
             self.pitch_offset = -1 * aruco_yaw
             print("设置为ArUco对齐模式")
         elif preset_type == 'extended':  # v键
-            self.offset = np.array([0.20, 0.12, -0.35])
+            self.offset = np.array([0.10, 0.12, -0.28])
+            print("设置为扩展模式")
+        elif preset_type == 'opened':  # e键
+            self.offset = np.array([0.12, -0.15, -0.30])
+            print("设置为扩展模式")
+        elif preset_type == 'open_ac':  # e键
+            self.offset = np.array([0.45, -0.15, 0.00])
             print("设置为扩展模式")
     
     def toggle_smooth_control(self):

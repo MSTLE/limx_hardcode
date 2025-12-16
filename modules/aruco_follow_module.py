@@ -135,6 +135,8 @@ class ArucoFollowModule(BaseModule):
             ord('z'): lambda: self.robot_controller.reset_offsets('default'),
             ord('c'): lambda: self.robot_controller.reset_offsets('aruco_aligned'),
             ord('v'): lambda: self.robot_controller.reset_offsets('extended'),
+            ord('e'): lambda: self.robot_controller.reset_offsets('opened'),
+            ord('5'): lambda: self.robot_controller.reset_offsets('open_ac'),
             
             # 平滑控制
             ord('f'): lambda: self.robot_controller.toggle_smooth_control(),

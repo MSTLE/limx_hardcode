@@ -34,7 +34,7 @@ CAMERA_CONTROL = {
 
 # 末端执行器控制参数
 END_EFFECTOR_CONFIG = {
-    'initial_offset': np.array([-0.02, 0.0, -0.10]),  # 米
+    'initial_offset': np.array([0.07, 0.02, -0.10]),  # 米
     'offset_step': 0.02,  # 米
     'initial_roll_offset': np.radians(6.0),
     'initial_pitch_offset': np.radians(-111),
@@ -45,17 +45,23 @@ END_EFFECTOR_CONFIG = {
 # 预设偏移配置
 PRESET_OFFSETS = {
     'default': {
-        'offset': np.array([0.10, 0.08, -0.10]),
+        'offset': np.array([-0.20, 0.02, -0.10]),
         'roll_offset': np.radians(6.0),
         'pitch_offset': np.radians(-111),
         'yaw_offset': 0.0
     },
     'aruco_aligned': {
-        'offset': np.array([0.08, 0.10, -0.15]),
+        'offset': np.array([0.05, 0.08 -0.15]),
         'roll_offset': np.radians(6.0)
     },
     'extended': {
-        'offset': np.array([0.15, 0.12, -0.35])
+        'offset': np.array([0.05, 0.10, -0.35])
+    },
+    'opened': {
+        'offset': np.array([0.45, 0.10, -0.40])
+    },
+    'open_ac': {
+        'offset': np.array([0.45, -0.25, -0.20])
     }
 }
 
